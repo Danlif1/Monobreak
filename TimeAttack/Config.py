@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import requests
 
 @dataclass
 class Config:
@@ -13,5 +14,6 @@ class Config:
     retries: int
     password_chars: str
     max_password_length: int
+    session: requests.Session
 
 TASK_CONFIG: Config | None = None
